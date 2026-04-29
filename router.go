@@ -2,11 +2,29 @@ package mux
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
 	"sync"
 )
+
+// validHTTPMethods lists supported HTTP methods.
+var validHTTPMethods = map[string]bool{
+	http.MethodGet:     true,
+	http.MethodHead:    true,
+	http.MethodPost:    true,
+	http.MethodPut:     true,
+	http.MethodPatch:   true,
+	http.MethodDelete:  true,
+	http.MethodConnect: true,
+	http.MethodOptions: true,
+	http.MethodTrace:   true,
+}
+
+func isValidMethod(m string) bool {
+	return validHTTPMethods[m]
+}
 
 // Router is a lightweight HTTP router with named params, explicit wildcard,
 // subrouter groups, and per-router middleware. It's intentionally small and
@@ -45,13 +63,17 @@ func defaultMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
 
 // Handle registers a handler for the given method and pattern.
 // Pattern syntax: segments separated by '/'. Named param: {name}. Wildcard: {*name} (must be last).
-func (r *Router) Handle(method, pattern string, h http.Handler) {
+func (r *Router) Handle(method, pattern string, h http.Handler) error {
+	// Validate HTTP method
+	if !isValidMethod(method) {
+		return fmt.Errorf("invalid HTTP method: %s", method)
+	}
+
 	// Lock ordering rule: never hold a child router lock while acquiring the
 	// root router lock. We first snapshot child state, then lock root only.
 	r.mu.RLock()
 	full := joinPrefix(r.prefix, pattern)
 	root := r.root
-	routeMws := append([]func(http.Handler) http.Handler(nil), r.middlewares...)
 	r.mu.RUnlock()
 	if root == nil {
 		root = r
@@ -59,19 +81,19 @@ func (r *Router) Handle(method, pattern string, h http.Handler) {
 
 	seg, spec, isPrefix, err := compilePattern(full)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("invalid pattern %q: %w", pattern, err)
 	}
-	// Snapshot middleware slices at registration time.
-	base := h
 
+	// Snapshot middleware slices at registration time under write lock to avoid TOCTOU.
 	root.mu.Lock()
+	routeMws := append([]func(http.Handler) http.Handler(nil), r.middlewares...)
 	rootPmws := append([]prefixMW(nil), root.prefixMws...)
-	wrapped := composeHandler(base, seg, routeMws, rootPmws)
+	wrapped := composeHandler(h, seg, routeMws, rootPmws)
 	rt := &route{
 		method:      method,
 		pattern:     full,
 		segments:    seg,
-		baseHandler: base,
+		baseHandler: h,
 		middlewares: routeMws,
 		handler:     wrapped,
 		specificity: spec,
@@ -79,31 +101,35 @@ func (r *Router) Handle(method, pattern string, h http.Handler) {
 	}
 	insertIntoTrie(root.tree, rt)
 	root.mu.Unlock()
+	return nil
 }
 
 // HandleFunc convenience wrapper.
-func (r *Router) HandleFunc(method, pattern string, hf func(http.ResponseWriter, *http.Request)) {
-	r.Handle(method, pattern, http.HandlerFunc(hf))
+func (r *Router) HandleFunc(method, pattern string, hf func(http.ResponseWriter, *http.Request)) error {
+	return r.Handle(method, pattern, http.HandlerFunc(hf))
 }
 
 // HandleMethods registers the same handler for multiple HTTP methods.
-func (r *Router) HandleMethods(methods []string, pattern string, h http.Handler) {
+func (r *Router) HandleMethods(methods []string, pattern string, h http.Handler) error {
 	for _, m := range methods {
-		r.Handle(m, pattern, h)
+		if err := r.Handle(m, pattern, h); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // HandleFuncMethods convenience wrapper for HandleMethods.
-func (r *Router) HandleFuncMethods(methods []string, pattern string, hf func(http.ResponseWriter, *http.Request)) {
-	r.HandleMethods(methods, pattern, http.HandlerFunc(hf))
+func (r *Router) HandleFuncMethods(methods []string, pattern string, hf func(http.ResponseWriter, *http.Request)) error {
+	return r.HandleMethods(methods, pattern, http.HandlerFunc(hf))
 }
 
 // Convenience methods.
-func (r *Router) Get(pattern string, h http.Handler)    { r.Handle(http.MethodGet, pattern, h) }
-func (r *Router) Post(pattern string, h http.Handler)   { r.Handle(http.MethodPost, pattern, h) }
-func (r *Router) Put(pattern string, h http.Handler)    { r.Handle(http.MethodPut, pattern, h) }
-func (r *Router) Patch(pattern string, h http.Handler)  { r.Handle(http.MethodPatch, pattern, h) }
-func (r *Router) Delete(pattern string, h http.Handler) { r.Handle(http.MethodDelete, pattern, h) }
+func (r *Router) Get(pattern string, h http.Handler) error    { return r.Handle(http.MethodGet, pattern, h) }
+func (r *Router) Post(pattern string, h http.Handler) error   { return r.Handle(http.MethodPost, pattern, h) }
+func (r *Router) Put(pattern string, h http.Handler) error    { return r.Handle(http.MethodPut, pattern, h) }
+func (r *Router) Patch(pattern string, h http.Handler) error  { return r.Handle(http.MethodPatch, pattern, h) }
+func (r *Router) Delete(pattern string, h http.Handler) error { return r.Handle(http.MethodDelete, pattern, h) }
 
 // Use appends middleware to this router. Middleware will be applied in the
 // order they are provided when wrapping handlers at registration time.
@@ -181,6 +207,15 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// Normalize: trim duplicate slashes but keep leading/trailing as-is for now.
 	if path == "" {
 		path = "/"
+	}
+
+	// Reject path traversal attempts.
+	if strings.Contains(path, "..") {
+		r.mu.RLock()
+		notFound := r.notFound
+		r.mu.RUnlock()
+		notFound.ServeHTTP(w, req)
+		return
 	}
 
 	r.mu.RLock()
