@@ -3,6 +3,7 @@ package mux
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -230,7 +231,9 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			rt.handler.ServeHTTP(w, req)
 			return
 		}
-		ctx := context.WithValue(req.Context(), paramsKey{}, params)
+		paramsCopy := make(map[string]string, len(params))
+		maps.Copy(paramsCopy, params)
+		ctx := context.WithValue(req.Context(), paramsKey{}, paramsCopy)
 		rt.handler.ServeHTTP(w, req.WithContext(ctx))
 		return
 	}
