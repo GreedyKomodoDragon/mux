@@ -187,10 +187,9 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	tree := r.tree
 	notFound := r.notFound
 	methodNotAllowed := r.methodNotAllowed
-	r.mu.RUnlock()
-
 	parts, trailing := splitPath(path)
 	rt, params, allowed, sawPrefixCandidate := lookupTrie(tree, parts, trailing, req.Method)
+	r.mu.RUnlock()
 	if rt != nil {
 		if len(params) == 0 {
 			rt.handler.ServeHTTP(w, req)

@@ -58,11 +58,8 @@ func TestDuplicateParamNames(t *testing.T) {
 
 func TestEmptySegmentPattern(t *testing.T) {
 	r := New()
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatalf("expected panic on empty segment pattern")
-		}
-	}()
+	// With path normalization, double slashes are collapsed.
+	// This should not panic; the pattern is normalized to "/bad/path".
 	r.Get("/bad//path", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 }
 

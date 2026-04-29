@@ -31,9 +31,32 @@ type route struct {
 	isPrefix    bool // pattern ended with '/'
 }
 
+// normalizePath collapses multiple consecutive slashes into one.
+func normalizePath(p string) string {
+	if p == "" {
+		return "/"
+	}
+	var b []byte
+	prevSlash := false
+	for i := 0; i < len(p); i++ {
+		c := p[i]
+		if c == '/' {
+			if !prevSlash {
+				b = append(b, '/')
+				prevSlash = true
+			}
+		} else {
+			b = append(b, c)
+			prevSlash = false
+		}
+	}
+	return string(b)
+}
+
 // compilePattern parses the pattern into segments and computes specificity.
 func compilePattern(p string) ([]segment, int, bool, error) {
 	// normalize: remove leading/trailing slash for splitting, but root "/" is special
+	p = normalizePath(p)
 	if p == "" {
 		return nil, 0, false, fmt.Errorf("empty pattern")
 	}
@@ -116,9 +139,7 @@ func paramName(part string) string {
 
 // splitPath returns path parts and whether the original path had a trailing slash.
 func splitPath(path string) ([]string, bool) {
-	if path == "" {
-		path = "/"
-	}
+	path = normalizePath(path)
 	if path == "/" {
 		return []string{}, strings.HasSuffix(path, "/")
 	}
