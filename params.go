@@ -28,7 +28,7 @@ func Params(r *http.Request) map[string]string {
 
 func routeParamsFromContext(r *http.Request) (map[string]string, bool) {
 	m, ok := r.Context().Value(paramsKey{}).(map[string]string)
-	if !ok || len(m) == 0 {
+	if !ok || m == nil {
 		return nil, false
 	}
 

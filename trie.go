@@ -61,7 +61,9 @@ func lookupTrie(root *trieNode, parts []string, trailing bool, method string) (*
 				sawPrefixCandidate = true
 			} else {
 				if rt, ok := n.prefixRoutes[method]; ok {
-					return rt, paramsForRoute(rt, parts), nil, sawPrefixCandidate
+					if params, match := paramsForRoute(rt, parts); match {
+						return rt, params, nil, sawPrefixCandidate
+					}
 				}
 				allowed = appendMethods(allowed, n.prefixRoutes)
 			}
@@ -92,7 +94,9 @@ func lookupTrie(root *trieNode, parts []string, trailing bool, method string) (*
 	}
 
 	if rt, ok := n.routes[method]; ok {
-		return rt, paramsForRoute(rt, parts), nil, sawPrefixCandidate
+		if params, match := paramsForRoute(rt, parts); match {
+			return rt, params, nil, sawPrefixCandidate
+		}
 	}
 	allowed = appendMethods(allowed, n.routes)
 
@@ -103,13 +107,17 @@ func lookupTrie(root *trieNode, parts []string, trailing bool, method string) (*
 				sawPrefixCandidate = true
 			} else {
 				if rt, ok := wn.prefixRoutes[method]; ok {
-					return rt, paramsForRoute(rt, parts), nil, sawPrefixCandidate
+					if params, match := paramsForRoute(rt, parts); match {
+						return rt, params, nil, sawPrefixCandidate
+					}
 				}
 				allowed = appendMethods(allowed, wn.prefixRoutes)
 			}
 		}
 		if rt, ok := wn.routes[method]; ok {
-			return rt, paramsForRoute(rt, parts), nil, sawPrefixCandidate
+			if params, match := paramsForRoute(rt, parts); match {
+				return rt, params, nil, sawPrefixCandidate
+			}
 		}
 		allowed = appendMethods(allowed, wn.routes)
 	}
@@ -117,18 +125,13 @@ func lookupTrie(root *trieNode, parts []string, trailing bool, method string) (*
 	return nil, nil, allowed, sawPrefixCandidate
 }
 
-func paramsForRoute(rt *route, parts []string) map[string]string {
+func paramsForRoute(rt *route, parts []string) (map[string]string, bool) {
 	if rt.isPrefix {
-		if p, ok := segmentsPrefixMatch(rt.segments, parts); ok {
-			return p
-		}
-		return nil
+		p, ok := segmentsPrefixMatch(rt.segments, parts)
+		return p, ok
 	}
 	p, ok := segmentsEqual(rt.segments, parts)
-	if !ok {
-		return nil
-	}
-	return p
+	return p, ok
 }
 
 func appendMethods(dst []string, byMethod map[string]*route) []string {

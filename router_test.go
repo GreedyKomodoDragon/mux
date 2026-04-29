@@ -11,9 +11,11 @@ import (
 
 func TestStaticRoute(t *testing.T) {
 	r := New()
-	r.Get("/hello", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	if err := r.Get("/hello", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
-	}))
+	})); err != nil {
+		t.Fatal(err)
+	}
 
 	ts := httptest.NewServer(r)
 	defer ts.Close()
@@ -30,9 +32,11 @@ func TestStaticRoute(t *testing.T) {
 
 func TestParamRoute(t *testing.T) {
 	r := New()
-	r.Get("/users/{id}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	if err := r.Get("/users/{id}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(Param(r, "id")))
-	}))
+	})); err != nil {
+		t.Fatal(err)
+	}
 	ts := httptest.NewServer(r)
 	defer ts.Close()
 	res, err := http.Get(ts.URL + "/users/123")
@@ -47,30 +51,29 @@ func TestParamRoute(t *testing.T) {
 
 func TestDuplicateParamNames(t *testing.T) {
 	r := New()
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatalf("expected panic on duplicate param names during registration")
-		}
-	}()
-	// duplicate param name {id} used twice
-	r.Get("/items/{id}/sub/{id}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	// duplicate param name {id} used twice - should return error
+	err := r.Get("/items/{id}/sub/{id}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	if err == nil {
+		t.Fatalf("expected error on duplicate param names during registration")
+	}
 }
 
 func TestEmptySegmentPattern(t *testing.T) {
 	r := New()
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatalf("expected panic on empty segment pattern")
-		}
-	}()
-	r.Get("/bad//path", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	// With path normalization, double slashes are collapsed.
+	// This should not panic; the pattern is normalized to "/bad/path".
+	if err := r.Get("/bad//path", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestHandleMultipleMethodsSameHandler(t *testing.T) {
 	r := New()
-	r.HandleMethods([]string{http.MethodGet, http.MethodPost}, "/multi", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	if err := r.HandleMethods([]string{http.MethodGet, http.MethodPost}, "/multi", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(r.Method))
-	}))
+	})); err != nil {
+		t.Fatal(err)
+	}
 	ts := httptest.NewServer(r)
 	defer ts.Close()
 
@@ -96,9 +99,11 @@ func TestHandleMultipleMethodsSameHandler(t *testing.T) {
 
 func TestWildcard(t *testing.T) {
 	r := New()
-	r.Get("/static/{*path}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	if err := r.Get("/static/{*path}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(Param(r, "path")))
-	}))
+	})); err != nil {
+		t.Fatal(err)
+	}
 	ts := httptest.NewServer(r)
 	defer ts.Close()
 	res, err := http.Get(ts.URL + "/static/images/2023/a.png")
@@ -113,12 +118,16 @@ func TestWildcard(t *testing.T) {
 
 func TestPrecedenceStaticOverParam(t *testing.T) {
 	r := New()
-	r.Get("/a/{x}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	if err := r.Get("/a/{x}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("param"))
-	}))
-	r.Get("/a/b", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Get("/a/b", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("static"))
-	}))
+	})); err != nil {
+		t.Fatal(err)
+	}
 
 	ts := httptest.NewServer(r)
 	defer ts.Close()
@@ -135,12 +144,16 @@ func TestPrecedenceStaticOverParam(t *testing.T) {
 
 func TestPrecedenceParamOverWildcard(t *testing.T) {
 	r := New()
-	r.Get("/a/{*rest}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	if err := r.Get("/a/{*rest}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("wild"))
-	}))
-	r.Get("/a/{x}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Get("/a/{x}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("param"))
-	}))
+	})); err != nil {
+		t.Fatal(err)
+	}
 
 	ts := httptest.NewServer(r)
 	defer ts.Close()
@@ -157,9 +170,11 @@ func TestPrecedenceParamOverWildcard(t *testing.T) {
 
 func TestMethodNotAllowed(t *testing.T) {
 	r := New()
-	r.Get("/resource", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	if err := r.Get("/resource", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("got"))
-	}))
+	})); err != nil {
+		t.Fatal(err)
+	}
 	ts := httptest.NewServer(r)
 	defer ts.Close()
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/resource", nil)
@@ -185,9 +200,11 @@ func TestGroupAndMiddleware(t *testing.T) {
 		})
 	})
 	r.Group("/api/v1", func(sub *Router) {
-		sub.Get("/ping", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := sub.Get("/ping", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte("pong"))
-		}))
+		})); err != nil {
+			t.Fatal(err)
+		}
 	})
 	ts := httptest.NewServer(r)
 	defer ts.Close()
@@ -211,9 +228,11 @@ func TestUsePrefixAppliesToExistingAndNew(t *testing.T) {
 	})
 
 	// existing route before UsePrefix would have been added, but we called UsePrefix first
-	r.Get("/v2/foo", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	if err := r.Get("/v2/foo", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
-	}))
+	})); err != nil {
+		t.Fatal(err)
+	}
 
 	ts := httptest.NewServer(r)
 	defer ts.Close()
@@ -258,10 +277,12 @@ func TestUsePrefixOrderPrefixThenUseThenHandler(t *testing.T) {
 			next.ServeHTTP(w, req)
 		})
 	})
-	r.Get("/v2/a", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	if err := r.Get("/v2/a", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		order = append(order, "handler")
 		w.WriteHeader(http.StatusOK)
-	}))
+	})); err != nil {
+		t.Fatal(err)
+	}
 
 	ts := httptest.NewServer(r)
 	defer ts.Close()
@@ -286,12 +307,16 @@ func TestUsePrefixSegmentAware(t *testing.T) {
 		})
 	})
 
-	r.Get("/v21/a", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	if err := r.Get("/v21/a", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusOK)
-	}))
-	r.Get("/v2/a", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Get("/v2/a", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusOK)
-	}))
+	})); err != nil {
+		t.Fatal(err)
+	}
 
 	ts := httptest.NewServer(r)
 	defer ts.Close()
@@ -324,12 +349,16 @@ func TestUsePrefixInsideGroupUsesGroupPrefix(t *testing.T) {
 				next.ServeHTTP(w, req)
 			})
 		})
-		sub.Get("/v2/ok", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if err := sub.Get("/v2/ok", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			w.WriteHeader(http.StatusOK)
-		}))
-		sub.Get("/v1/no", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		})); err != nil {
+			t.Fatal(err)
+		}
+		if err := sub.Get("/v1/no", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			w.WriteHeader(http.StatusOK)
-		}))
+		})); err != nil {
+			t.Fatal(err)
+		}
 	})
 
 	ts := httptest.NewServer(r)
@@ -361,9 +390,11 @@ func TestUsePrefixWithParamRouteDoesNotMatchLiteralLongerPrefix(t *testing.T) {
 			next.ServeHTTP(w, req)
 		})
 	})
-	r.Get("/v2/{resource}", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	if err := r.Get("/v2/{resource}", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.Write([]byte(fmt.Sprintf("%s", Param(req, "resource"))))
-	}))
+	})); err != nil {
+		t.Fatal(err)
+	}
 
 	ts := httptest.NewServer(r)
 	defer ts.Close()
@@ -380,9 +411,11 @@ func TestUsePrefixWithParamRouteDoesNotMatchLiteralLongerPrefix(t *testing.T) {
 
 func TestUseAfterRegistrationDoesNotAffectExistingRoute(t *testing.T) {
 	r := New()
-	r.Get("/x", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	if err := r.Get("/x", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusOK)
-	}))
+	})); err != nil {
+		t.Fatal(err)
+	}
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			w.Header().Add("X-LATE", "1")
@@ -404,9 +437,11 @@ func TestUseAfterRegistrationDoesNotAffectExistingRoute(t *testing.T) {
 
 func TestUsePrefixMatchesWildcardRouteForDeeperPrefix(t *testing.T) {
 	r := New()
-	r.Get("/v2/{*rest}", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	if err := r.Get("/v2/{*rest}", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusOK)
-	}))
+	})); err != nil {
+		t.Fatal(err)
+	}
 	r.UsePrefix("/v2/admin", func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			w.Header().Add("X-W", "1")
@@ -428,9 +463,11 @@ func TestUsePrefixMatchesWildcardRouteForDeeperPrefix(t *testing.T) {
 
 func TestSlashRedirect(t *testing.T) {
 	r := New()
-	r.Get("/foo/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	if err := r.Get("/foo/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("trailing"))
-	}))
+	})); err != nil {
+		t.Fatal(err)
+	}
 	ts := httptest.NewServer(r)
 	defer ts.Close()
 	// request without slash should redirect
