@@ -227,13 +227,10 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	rt, params, allowed, sawPrefixCandidate := lookupTrie(tree, parts, trailing, req.Method)
 	r.mu.RUnlock()
 	if rt != nil {
-		if len(params) == 0 {
-			rt.handler.ServeHTTP(w, req)
-			return
-		}
 		paramsCopy := make(map[string]string, len(params))
 		maps.Copy(paramsCopy, params)
 		ctx := context.WithValue(req.Context(), paramsKey{}, paramsCopy)
+		ctx = context.WithValue(ctx, patternKey{}, rt.pattern)
 		rt.handler.ServeHTTP(w, req.WithContext(ctx))
 		return
 	}
